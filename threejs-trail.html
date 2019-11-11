@@ -1,0 +1,298 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+	<title>Threejs Confetti</title>
+	<meta charset="utf-8">
+	<meta name="viewport" content="width=device-width, user-scalable=no, minimum-scale=1.0, maximum-scale=1.0">
+</head>
+
+<body>
+	<script src="./lib/three.min.js"></script>
+	<script src="./lib/TrailRenderer.js"></script>
+
+	<script type="module">
+
+		var options = {
+
+	    	headRed : 1.0,
+	    	headGreen : 0.0,
+	    	headBlue : 0.0,
+	    	headAlpha : 0.75,
+
+	    	tailRed : 0.0,
+	    	tailGreen : 0.0,
+	    	tailBlue : 1.0,
+	    	tailAlpha : 0.35,
+
+	    	trailLength : 100,
+
+	    	dragTexture : false,
+	    };
+
+		var renderer;
+		var camera, scene;
+		
+		var baseTrailMaterial;
+		var circlePoints = [];
+		var trailTarget;
+
+		var trail;
+		
+		var ambientLight;
+		var pointLight;
+
+		var lastTrailUpdateTime;
+		var lastTrailResetTime;
+
+		var updateTrailTarget_func
+
+		init();
+		
+		function init() {
+
+			lastTrailUpdateTime = performance.now();
+			lastTrailResetTime = performance.now();
+
+			var width = window.innerWidth;
+			var height = window.innerHeight;
+
+			// scene
+			scene = new THREE.Scene();
+
+			// camera
+			camera = new THREE.PerspectiveCamera( 45, 1.0, 2, 2000 );
+			camera.aspect = width / height;
+			camera.updateProjectionMatrix();
+			camera.position.set( 0, 200, 400 );
+			camera.lookAt( scene.position );
+			
+			scene.add( camera );
+
+			// renderer
+			renderer = new THREE.WebGLRenderer();
+			renderer.setPixelRatio( window.devicePixelRatio );
+			renderer.setSize( window.innerWidth, window.innerHeight );
+			renderer.autoClear = false; // To allow render overlay on top of sprited sphere
+			document.body.appendChild( renderer.domElement );
+
+			// light
+			initLights();
+
+			initTrailRenderers( function() {
+
+				updateTrailTarget_func = updateTrailTarget();
+				update();
+
+			});	
+
+		}
+
+		function initLights() {
+
+			ambientLight = new THREE.AmbientLight( 0x777777 );
+			scene.add( ambientLight );
+
+			pointLight = new THREE.PointLight( 0xffffff, 2, 1000, 1 );
+			pointLight.position.set( 0, 150, 0 );
+			scene.add( pointLight );
+
+		}
+
+		function initTrailRenderers( callback ) {
+
+			trail = new THREE.TrailRenderer( scene, false );	
+
+			continueInitialization();
+
+			if ( callback ) {
+
+				callback();
+
+			}
+
+			function continueInitialization() {
+
+				createTrailMaterial();
+				createTrailHeadGeometry();
+				createTrailTarget();
+				createTrail();
+
+			}
+
+		}
+
+		function updateTrailColors() {
+
+			baseTrailMaterial.uniforms.headColor.value.set( options.headRed, options.headGreen, options.headBlue, options.headAlpha ); //1 0 0 0.75
+			baseTrailMaterial.uniforms.tailColor.value.set( options.tailRed, options.tailGreen, options.tailBlue, options.tailAlpha ); //0 1 1 0.35
+
+		}
+
+		function createTrailMaterial() {
+
+			baseTrailMaterial = THREE.TrailRenderer.createBaseMaterial();	
+
+		}
+
+		function createTrailHeadGeometry() {
+
+			var twoPI = Math.PI * 2;
+			var index = 0;
+			var scale = 10.0;
+			var inc = twoPI / 32.0;
+
+			for ( var i = 0; i <= twoPI + inc; i+= inc )  {
+
+				var vector = new THREE.Vector3();
+				vector.set( Math.cos( i ) * scale, Math.sin( i ) * scale, 0 );
+				circlePoints[ index ] = vector;
+				index ++;
+
+			}
+
+		}
+
+		function createTrailTarget() {
+
+			var trailTargetMaterial = new THREE.MeshPhongMaterial( {
+				color: 0xa0adaf,
+				shininess: 10,
+				specular: 0x111111,
+				shading: THREE.SmoothShading
+			} );
+
+			var geometry = new THREE.SphereGeometry( 10, 32, 32 );
+			var material = new THREE.MeshBasicMaterial( {color: 0xffff00} );
+			trailTarget = new THREE.Mesh( geometry, trailTargetMaterial );
+			trailTarget.position.set( 0, 0, 0 );
+			trailTarget.scale.multiplyScalar( 1 );
+			trailTarget.receiveShadow = false;
+
+			scene.add( trailTarget );
+
+		}
+		
+		function createTrail() {
+
+			trail.initialize( baseTrailMaterial, Math.floor(options.trailLength), options.dragTexture ? 1.0 : 0.0, 0, circlePoints, trailTarget );
+			updateTrailColors();
+			trail.activate();
+
+		}
+
+		function onWindowResize() {
+
+			var width = window.innerWidth;
+			var height = window.innerHeight;
+
+			camera.left = - width / 2;
+			camera.right = width / 2;
+			cameraOrtho.top = height / 2;
+			cameraOrtho.bottom = - height / 2;
+			cameraOrtho.updateProjectionMatrix();
+
+			renderer.setSize( window.innerWidth, window.innerHeight );
+
+		}
+
+		function updateTrailTarget() {
+
+			var tempQuaternion = new THREE.Quaternion();
+
+			var baseForward = new THREE.Vector3( 0, 0, -1 );
+			var tempForward = new THREE.Vector3();
+			var tempUp = new THREE.Vector3();
+
+			var tempRotationMatrix= new THREE.Matrix4();
+			var tempTranslationMatrix= new THREE.Matrix4();
+
+			var currentTargetPosition = new THREE.Vector3();
+			var lastTargetPosition = new THREE.Vector3();
+
+			var currentDirection = new THREE.Vector3();
+			var lastDirection= new THREE.Vector3();
+
+			var lastRotationMatrix = new THREE.Matrix4();
+
+			return function updateTrailTarget( time ) {
+
+				if ( time - lastTrailUpdateTime > 10 ) {
+
+					trail.advance();
+					lastTrailUpdateTime = time;
+
+				} else {
+
+					trail.updateHead();
+
+				}
+
+				// if ( time - lastTrailResetTime > 2000 ) {
+
+				// 	trail.reset();
+				// 	lastTrailResetTime = time;
+
+				// }
+
+				tempRotationMatrix.identity();
+				tempTranslationMatrix.identity();
+
+				var scaledTime = time * .001;
+				var areaScale = 100;
+
+				lastTargetPosition.copy( currentTargetPosition );
+
+				currentTargetPosition.x = Math.sin( scaledTime ) * areaScale;
+				currentTargetPosition.y = Math.sin( scaledTime * 1.1 ) * areaScale;
+				// currentTargetPosition.z = Math.sin( scaledTime * 1.6 ) * areaScale;
+
+				lastDirection.copy( currentDirection );
+
+				currentDirection.copy( currentTargetPosition );
+				currentDirection.sub( lastTargetPosition );
+				currentDirection.normalize();
+
+				tempUp.crossVectors( currentDirection, baseForward );
+				var angle = baseForward.angleTo( currentDirection );
+
+				if( Math.abs( angle ) > .01 && tempUp.lengthSq() > .001 ) {
+
+					tempQuaternion.setFromUnitVectors( baseForward, currentDirection );
+					tempQuaternion.normalize();
+					tempRotationMatrix.makeRotationFromQuaternion( tempQuaternion );
+					lastRotationMatrix.copy( tempRotationMatrix );							
+
+				}
+				
+				tempTranslationMatrix.makeTranslation ( currentTargetPosition.x, currentTargetPosition.y, currentTargetPosition.z );
+				tempTranslationMatrix.multiply( tempRotationMatrix );  
+
+				trailTarget.matrix.identity();
+				trailTarget.applyMatrix( tempTranslationMatrix );
+				trailTarget.updateMatrixWorld();
+			}
+
+		};
+
+
+		function update() {
+
+			render();
+			var time = performance.now();
+			updateTrailTarget_func(time);
+			requestAnimationFrame(update);
+
+		}
+
+		function render() {
+
+			renderer.clear();
+			renderer.render( scene, camera );
+
+		}
+
+		</script>
+</body>
+
+</html>
